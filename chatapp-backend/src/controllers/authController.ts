@@ -27,6 +27,7 @@ export const signup = async (req: Request, res: Response) => {
       email,
       username,
       password: hashedPassword,
+      status: 'not',
     });
 
     await newUser.save();
@@ -56,6 +57,9 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
+    user.status = 'online';
+    await user.save();
+
     const token = jwt.sign({ userId: user._id }, jwtSecret, { expiresIn: '1h' });
 
     res.status(200).json({ message: 'Login successful', token });
@@ -82,7 +86,7 @@ export const getUserName = async (req: Request, res: Response) => {
     res.json({ firstName: user.firstName, lastName: user.lastName });
   } catch (error) {
     console.error('Error processing user name:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'jwt expired' });
   }
 };
 
@@ -95,17 +99,41 @@ export const getPeopleList = async (req: Request, res: Response) => {
 
     const decoded = jwt.verify(token, jwtSecret) as { userId: string };
 
-    const users = await User.find({ _id: { $ne: decoded.userId } }).select('firstName lastName');
+    const users = await User.find({ _id: { $ne: decoded.userId } }).select('firstName lastName status');
 
     const people = users.map(user => ({
       id: user._id,
       name: `${user.firstName} ${user.lastName}`,
-      status: 'Offline'
+      status: `${user.status}`
     }));
 
     res.json({ people });
   } catch (error) {
     console.error('Error fetching people list:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const decoded = jwt.verify(token, jwtSecret) as { userId: string };
+    
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.status = 'not';
+    await user.save();
+
+    res.status(200).json({ message: 'Logout successful' });
+  } catch (error) {
+    console.error('Error during logout:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 };

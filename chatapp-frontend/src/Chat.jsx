@@ -4,10 +4,12 @@ import axios from 'axios';
 
 function Chat() {
     const [isDropdownOpen, setDropdownOpen] = useState(false);
-    const [selectedPersonId, setSelectedPersonId] = useState(null);
-    const [newMessage, setNewMessage] = useState('');
     const [userName, setUserName] = useState('');
+    const [selectedPersonName, setSelectedPersonName] = useState(null);
     const [people, setPeople] = useState([]);
+    const [messages, setMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
 
     const toggleDropdown = () => {
         setDropdownOpen(!isDropdownOpen);
@@ -15,52 +17,101 @@ function Chat() {
 
     const navigate = useNavigate();
 
-    const logout = () => {
-        navigate('/');
+    const logout = async () => {
+        try {
+            const token = localStorage.getItem('token');
+
+            if (token) {
+                await axios.post('http://localhost:5000/api/users/logout', {}, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+            }
+
+            localStorage.clear();
+
+            navigate('/');
+        } catch (error) {
+            console.error('Error during logout:', error);
+        }
     };
 
-    const selectedPerson = people.find(person => person.id === selectedPersonId);
+    const selectedPerson = people.find(person => person.name === selectedPersonName);
 
-    const handleSendMessage = () => {
-        if (newMessage.trim() === '') return;
+    const handleSendMessage = async () => {
+        if (!selectedPersonName || !newMessage.trim()) return;
+        try {
+            const response = await axios.post('http://localhost:5000/api/messages/send', {
+                sender: userName,
+                receiver: selectedPersonName,
+                message: newMessage,
+                time: new Date().toISOString()
+            });
+            setMessages([...messages, response.data.message]);
+            setNewMessage('');
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
+    };
 
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        setPeople(prevPeople =>
-            prevPeople.map(person =>
-                person.id === selectedPersonId
-                    ? { ...person, text: [...person.text, [newMessage, 2, time]] }
-                    : person
-            )
-        );
-
-        setNewMessage('');
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSendMessage();
+        }
     };
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
+                const token = localStorage.getItem('token');
                 const userResponse = await axios.get('http://localhost:5000/api/users/process-name', {
                     headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
                 const { firstName, lastName } = userResponse.data;
                 setUserName(`${firstName} ${lastName}`);
-        
+
                 const peopleResponse = await axios.get('http://localhost:5000/api/users/people-list', {
                     headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
                 setPeople(peopleResponse.data.people);
             } catch (error) {
                 console.error('Error fetching user data:', error);
+                localStorage.clear();
+                alert('Session expired. Please log in again.');
+                navigate('/');
             }
         };
 
         fetchUserData();
-    }, []);
+    }, [navigate]);
+
+    useEffect(() => {
+        const fetchMessages = async () => {
+            if (!selectedPersonName) return;
+            try {
+                const response = await axios.get('http://localhost:5000/api/messages/getMessages', {
+                    params: {
+                        sender: userName,
+                        receiver: selectedPersonName
+                    }
+                });
+                setMessages(response.data.messages);
+            } catch (error) {
+                console.error('Error fetching messages:', error);
+            }
+        };
+        fetchMessages();
+    }, [userName, selectedPersonName, messages]);
+
+    const filteredPeople = people.filter(person =>
+        person.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -87,25 +138,27 @@ function Chat() {
                     </div>
                 )}
             </div>
-            <div className="flex flex-grow">
+            <div className="flex flex-row h-full">
                 <div className="w-1/3 border-r flex flex-col border-gray-300">
                     <div className="relative text-gray-500 border-b p-3">
                         <input
                             type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
                             className="border border-gray-300 rounded-lg w-full pl-12 py-2 focus:outline-none focus:ring-gray-300 text-sm md:pl-12 md:text-base"
                             placeholder="Search"
                         />
                         <i className="fa-solid fa-magnifying-glass absolute top-1/2 left-8 transform -translate-y-1/2 md:text-sm"></i>
                     </div>
-                    {people.map(person => (
+                    {filteredPeople.map(person => (
                         <div
-                            key={person.id}
-                            className={`flex items-center space-x-3 p-5 cursor-pointer ${selectedPersonId === person.id ? 'bg-gray-200' : ''} hover:bg-gray-100`}
-                            onClick={() => setSelectedPersonId(person.id)}
+                            key={person.name}
+                            className={`flex items-center space-x-3 p-5 cursor-pointer ${selectedPersonName === person.name ? 'bg-gray-200' : ''} hover:bg-gray-100`}
+                            onClick={() => setSelectedPersonName(person.name)}
                         >
                             <div className="relative">
                                 <i className="fa-regular fa-circle-user fa-2x text-[#475467]"></i>
-                                {person.status === 'Online' && (
+                                {person.status === 'online' && (
                                     <div className="absolute right-0 top-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
                                 )}
                             </div>
@@ -113,25 +166,25 @@ function Chat() {
                         </div>
                     ))}
                 </div>
-                <div className="w-2/3 flex flex-col">
-                    <div className="flex flex-col flex-grow">
-                        {selectedPerson ? (
-                            <div className="flex flex-col flex-grow">
+                <div className="w-2/3 flex flex-col flex-auto h-full">
+                    <div className="flex flex-col">
+                        {selectedPersonName ? (
+                            <div className="flex flex-col h-full">
                                 <div className="flex items-center border-b p-2">
                                     <div className="relative">
                                         <i className="fa-regular fa-circle-user fa-2x text-[#475467]"></i>
-                                        {selectedPerson.status === 'Online' && (
+                                        {selectedPerson?.status === 'online' && (
                                             <div className="absolute right-0 top-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
                                         )}
                                     </div>
                                     <div className="pl-4">
-                                        <div className="text-[#344054]">{selectedPerson.name}</div>
-                                        {selectedPerson.status === 'Online' && (
-                                            <div className="text-tiny text-gray-500">{selectedPerson.status}</div>
+                                        <div className="text-[#344054]">{selectedPerson?.name}</div>
+                                        {selectedPerson?.status === 'online' && (
+                                            <div className="text-tiny text-gray-500">{selectedPerson?.status}</div>
                                         )}
                                     </div>
                                 </div>
-                                {selectedPerson.text.length === 0 ? (
+                                {messages.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-center">
                                         <i className="fa-regular fa-message fa-6x pb-5 text-gray-300"></i>
                                         <div className="text-[20px] text-gray-500">
@@ -139,32 +192,32 @@ function Chat() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col space-y-2 px-8 py-1">
-                                        {selectedPerson.text.map(([text, sender, time], index) => (
-                                            <div key={index} className={`flex ${sender === 1 ? 'justify-start' : 'justify-end'} p-2`}>
-                                                {sender === 1 && (
+                                    <div className="flex flex-col h-full space-y-2 px-8 py-1">
+                                        {messages.map((message, index) => (
+                                            <div key={index} className={`flex ${message.sender === userName ? 'justify-end' : 'justify-start'} p-2`}>
+                                                {message.sender !== userName && (
                                                     <div className="flex items-center">
                                                         <i className="fa-regular fa-circle-user fa-2x mr-2 text-[#475467]"></i>
                                                         <div className='flex flex-col items-start'>
                                                             <div className='bg-gray-200 text-[#344054] p-3 rounded-lg max-w-xs'>
-                                                                {text}
+                                                                {message.message}
                                                             </div>
                                                             <div className='text-xs text-gray-500'>
                                                                 <i className="fa-solid fa-check-double px-2 text-blue-600"></i>
-                                                                {time}
+                                                                {new Date(message.time).toLocaleTimeString()}
                                                             </div>
                                                         </div>
                                                     </div>
                                                 )}
-                                                {sender === 2 && (
+                                                {message.sender === userName && (
                                                     <div>
                                                         <div className='flex flex-col items-end'>
                                                             <div className='bg-blue-100 text-[#344054] p-3 rounded-lg max-w-xs'>
-                                                                {text}
+                                                                {message.message}
                                                             </div>
                                                             <div className='text-xs text-gray-500'>
                                                                 <i className="fa-solid fa-check-double px-2 text-blue-600"></i>
-                                                                {time}
+                                                                {new Date(message.time).toLocaleTimeString()}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -174,13 +227,16 @@ function Chat() {
                                     </div>
                                 )}
                                 <div className="mt-auto p-3 flex">
-                                    <input
-                                        type="text"
-                                        value={newMessage}
-                                        onChange={(e) => setNewMessage(e.target.value)}
-                                        className="border border-gray-300 rounded-3xl px-4 focus:outline-none focus:ring-[#26B7CD] w-full"
-                                        placeholder="Type your message"
-                                    />
+                                    <div className="relative w-full">
+                                        <input
+                                            type="text"
+                                            value={newMessage}
+                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            onKeyDown={handleKeyDown}
+                                            className="flex border border-gray-300 rounded-3xl px-4 focus:outline-none focus:ring-[#26B7CD] w-full"
+                                            placeholder="Type your message"
+                                        />
+                                    </div>
                                     <button
                                         className="px-2 text-gray-400 hover:text-[#475467] transition-colors duration-200"
                                         onClick={handleSendMessage}
