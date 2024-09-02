@@ -30,12 +30,11 @@ export const getMessages = async (req: Request, res: Response) => {
     }
 };
 
-export const sendMessage = async (req: Request, res: Response) => {
+export const sendMessage = async (sender: string, receiver: string, message: string) => {
     try {
-        const { sender, receiver, message } = req.body;
 
         if (!sender || !receiver || !message) {
-            return res.status(400).json({ message: 'Sender, receiver, and message are required' });
+            return { message: 'Sender, receiver, and message are required' };
         }
 
         const newMessage = new Message({
@@ -47,9 +46,9 @@ export const sendMessage = async (req: Request, res: Response) => {
 
         await newMessage.save();
 
-        res.status(201).json({ message: 'Message sent successfully', data: newMessage });
+        return { message: 'Message sent successfully', data: newMessage };
     } catch (error) {
         console.error('Error sending message:', error);
-        res.status(500).json({ message: 'Server error' });
+        return { message: 'Server error' };
     }
 };

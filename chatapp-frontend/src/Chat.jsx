@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3001');
 
 function Chat() {
     const [isDropdownOpen, setDropdownOpen] = useState(false);
@@ -10,74 +13,25 @@ function Chat() {
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-
-    const toggleDropdown = () => {
-        setDropdownOpen(!isDropdownOpen);
-    };
-
     const navigate = useNavigate();
-
-    const logout = async () => {
-        try {
-            const token = localStorage.getItem('token');
-
-            if (token) {
-                await axios.post('http://localhost:5000/api/users/logout', {}, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
-            }
-
-            localStorage.clear();
-
-            navigate('/');
-        } catch (error) {
-            console.error('Error during logout:', error);
-        }
-    };
-
-    const selectedPerson = people.find(person => person.name === selectedPersonName);
-
-    const handleSendMessage = async () => {
-        if (!selectedPersonName || !newMessage.trim()) return;
-        try {
-            const response = await axios.post('http://localhost:5000/api/messages/send', {
-                sender: userName,
-                receiver: selectedPersonName,
-                message: newMessage,
-                time: new Date().toISOString()
-            });
-            setMessages([...messages, response.data.message]);
-            setNewMessage('');
-        } catch (error) {
-            console.error('Error sending message:', error);
-        }
-    };
-
-    const handleKeyDown = (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            handleSendMessage();
-        }
-    };
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
                 const token = localStorage.getItem('token');
+                if (!token) {
+                    navigate('/');
+                    return;
+                }
+
                 const userResponse = await axios.get('http://localhost:5000/api/users/process-name', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const { firstName, lastName } = userResponse.data;
                 setUserName(`${firstName} ${lastName}`);
 
                 const peopleResponse = await axios.get('http://localhost:5000/api/users/people-list', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
                 setPeople(peopleResponse.data.people);
             } catch (error) {
@@ -92,26 +46,77 @@ function Chat() {
     }, [navigate]);
 
     useEffect(() => {
-        const fetchMessages = async () => {
-            if (!selectedPersonName) return;
-            try {
-                const response = await axios.get('http://localhost:5000/api/messages/getMessages', {
-                    params: {
-                        sender: userName,
-                        receiver: selectedPersonName
-                    }
-                });
-                setMessages(response.data.messages);
-            } catch (error) {
-                console.error('Error fetching messages:', error);
-            }
+        if (selectedPersonName) {
+            socket.emit('joinRoom', { sender: userName, receiver: selectedPersonName });
+
+            const fetchMessages = async () => {
+                try {
+                    const response = await axios.get('http://localhost:5000/api/messages/getMessages', {
+                        params: {
+                            sender: userName,
+                            receiver: selectedPersonName
+                        }
+                    });
+                    setMessages(response.data.messages);
+                } catch (error) {
+                    console.error('Error fetching messages:', error);
+                }
+            };
+
+            fetchMessages();
+        }
+    }, [selectedPersonName, userName]);
+
+    useEffect(() => {
+        socket.on('receiveMessage', (data) => {
+            console.log('Received message:', data);
+            setMessages(prevMessages => [...prevMessages, data]);
+        });
+
+        return () => {
+            socket.off('receiveMessage');
         };
-        fetchMessages();
-    }, [userName, selectedPersonName, messages]);
+    }, []);
+
+    const toggleDropdown = () => {
+        setDropdownOpen(prev => !prev);
+    };
+
+    const logout = async () => {
+        try {
+            const token = localStorage.getItem('token');
+
+            if (token) {
+                await axios.post('http://localhost:5000/api/users/logout', {}, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+            }
+
+            localStorage.clear();
+            navigate('/');
+        } catch (error) {
+            console.error('Error during logout:', error);
+        }
+    };
+
+    const handleSendMessage = () => {
+        if (!selectedPersonName || !newMessage.trim()) return;
+        socket.emit('sendMessage', { sender: userName, receiver: selectedPersonName, message: newMessage });
+        setNewMessage('');
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSendMessage();
+        }
+    };
 
     const filteredPeople = people.filter(person =>
         person.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const selectedPerson = people.find(person => person.name === selectedPersonName);
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -185,21 +190,21 @@ function Chat() {
                                     </div>
                                 </div>
                                 {messages.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-full text-center">
+                                    <div className="flex flex-col items-center justify-center min-h-full h-full text-center">
                                         <i className="fa-regular fa-message fa-6x pb-5 text-gray-300"></i>
                                         <div className="text-[20px] text-gray-500">
                                             You haven't started chatting yet
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col h-full space-y-2 px-8 py-1">
+                                    <div className="flex flex-col h-full space-y-2 px-8 py-1 min-h-[70.5vh] max-h-[70.5vh] overflow-y-hidden">
                                         {messages.map((message, index) => (
                                             <div key={index} className={`flex ${message.sender === userName ? 'justify-end' : 'justify-start'} p-2`}>
                                                 {message.sender !== userName && (
                                                     <div className="flex items-center">
                                                         <i className="fa-regular fa-circle-user fa-2x mr-2 text-[#475467]"></i>
                                                         <div className='flex flex-col items-start'>
-                                                            <div className='bg-gray-200 text-[#344054] p-3 rounded-lg max-w-xs'>
+                                                            <div className={`bg-${message.status === 'seen' ? '[#344054]' : 'gray-200'} text-[#344054] p-3 rounded-lg max-w-xs`}>
                                                                 {message.message}
                                                             </div>
                                                             <div className='text-xs text-gray-500'>
@@ -212,7 +217,7 @@ function Chat() {
                                                 {message.sender === userName && (
                                                     <div>
                                                         <div className='flex flex-col items-end'>
-                                                            <div className='bg-blue-100 text-[#344054] p-3 rounded-lg max-w-xs'>
+                                                        <div className={`bg-${message.status === 'seen' ? '[#344054]' : 'gray-200'} text-[#344054] p-3 rounded-lg max-w-xs`}>
                                                                 {message.message}
                                                             </div>
                                                             <div className='text-xs text-gray-500'>
@@ -246,7 +251,7 @@ function Chat() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center h-full">
+                            <div className="flex flex-col items-center justify-center h-full min-h-[88vh] max-h-[100vh]">
                                 <i className="fa-regular fa-message fa-6x pb-5 text-gray-300"></i>
                                 <div className="text-[20px] text-gray-500">No chats here yet…</div>
                             </div>
