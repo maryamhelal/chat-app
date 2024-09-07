@@ -6,10 +6,10 @@ import messageRoutes from './routes/messageRoutes';
 import { sendMessage } from './controllers/messageController';
 
 const app = express();
-const uri = 'mongodb://127.0.0.1:27017/chatApp';
+const uri = 'mongodb://mongo:27017/chatApp';
 const io = require('socket.io')(3001, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: 'http://frontend:3000',
     methods: ['GET', 'POST'],
   },
 });
