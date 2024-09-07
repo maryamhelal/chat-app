@@ -190,7 +190,7 @@ function Chat() {
                                     </div>
                                 </div>
                                 {messages.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center min-h-full h-full text-center">
+                                    <div className="flex flex-col items-center justify-center text-center h-full space-y-2 px-8 py-1 min-h-[70.5vh] max-h-[70.5vh]">
                                         <i className="fa-regular fa-message fa-6x pb-5 text-gray-300"></i>
                                         <div className="text-[20px] text-gray-500">
                                             You haven't started chatting yet
