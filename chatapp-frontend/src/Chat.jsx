@@ -197,7 +197,7 @@ function Chat() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col h-full space-y-2 px-8 py-1 min-h-[70.5vh] max-h-[70.5vh] overflow-y-hidden">
+                                    <div className="flex flex-col h-full space-y-2 px-8 py-1 min-h-[70.5vh] max-h-[70.5vh] overflow-y-auto">
                                         {messages.map((message, index) => (
                                             <div key={index} className={`flex ${message.sender === userName ? 'justify-end' : 'justify-start'} p-2`}>
                                                 {message.sender !== userName && (
